@@ -1,20 +1,20 @@
 class Fgn < Formula
   desc "Fireworks Game Notation CLI — validate, format, and convert Hanabi game records"
   homepage "https://tractat.us/fgn/"
-  version "0.1.5"
+  version "0.1.12"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/tractat-us/homebrew-tap/releases/download/v0.1.5/fgn-darwin-arm64"
-      sha256 "c97ce032ccf9ae0cb8ee15591692577ea2c1c254aca34f6806d7cbb438a35b0f"
+      url "https://github.com/tractat-us/homebrew-tap/releases/download/v0.1.12/fgn-darwin-arm64"
+      sha256 "f3db1df5a1698d466b11c32f3cd0ad0cd0edf47964256a588216c35692293e19"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/tractat-us/homebrew-tap/releases/download/v0.1.5/fgn-linux-x64"
-      sha256 "9b4b70340cba4e7a92d20bdb4e2eb0739288e8da005395b39340528b2fa46cad"
+      url "https://github.com/tractat-us/homebrew-tap/releases/download/v0.1.12/fgn-linux-x64"
+      sha256 "9fd32251cc4602ccdadd64db32b1135f8f7fa448b548be51911cd498858b6800"
     end
   end
 
