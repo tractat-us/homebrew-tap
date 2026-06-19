@@ -23,6 +23,6 @@ class Fgn < Formula
   end
 
   test do
-    assert_match "v0.1.5", shell_output("#{bin}/fgn version")
+    assert_match version.to_s, shell_output("#{bin}/fgn version")
   end
 end
