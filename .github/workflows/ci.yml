@@ -7,8 +7,7 @@ name: ci
 # detect (seconds) diffs the change and emits one flag:
 #   formula-inputs — any path other than docs and repo metadata changed → brew runs
 #
-# brew lints every formula in the tap: `brew readall` on every OS and CPU, `brew style`, and
-# `brew audit --strict`. The audit is offline on purpose (no --online): a formula's url and
+# brew lints every formula in the tap with `brew style` and `brew audit --strict`. The audit is offline on purpose (no --online): a formula's url and
 # sha256 may name a release that isn't published yet, as bee's first one did.
 #
 # ci-required passes only when every job that should have run succeeded and every other job
@@ -129,10 +128,8 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: timeout 600 brew install-bundler-gems
 
-      # Loads every formula as each OS and CPU would, so a macOS-only block is checked on Linux.
-      - name: brew readall
-        run: timeout 300 brew readall --os=all --arch=all tractat-us/tap
-
+      # No `brew readall --os=all --arch=all`: fgn.rb has a url only for darwin-arm64 and
+      # linux-x64, so it reads as invalid ("requires at least a URL") on every other platform.
       - name: brew style
         run: timeout 300 brew style tractat-us/tap
 
