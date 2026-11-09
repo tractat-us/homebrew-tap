@@ -4,7 +4,7 @@ class Bee < Formula
   # Bumped by tractat-us/bee's brew-release workflow on each v<x.y.z> tag. bee is public, so the
   # tarball comes from bee's own release, not a mirror here (fgn mirrors because it is internal).
   url "https://github.com/tractat-us/bee/releases/download/v0.1.0/bee-0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "3180af7fb3879fa56670659d8025ef65af975ef8b4615479097a63478d2c53be"
   license "AGPL-3.0-only"
 
   # One tarball for every platform: the host and the bridge are plain JVM jars.
