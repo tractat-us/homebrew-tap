@@ -20,3 +20,4 @@ brew install fgn
 | Formula | Description |
 |---------|-------------|
 | `fgn` | Fireworks Game Notation CLI — validate, format, and convert Hanabi game records |
+| `bee` | Shared, agent-drawn board for people and their Claude sessions. Install as `tractat-us/tap/bee`: plain `bee` is an unrelated homebrew-core formula. |
