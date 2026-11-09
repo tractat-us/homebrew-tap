@@ -1,7 +1,6 @@
 class Fgn < Formula
   desc "Fireworks Game Notation CLI — validate, format, and convert Hanabi game records"
   homepage "https://tractat.us/fgn/"
-  version "0.1.12"
   license "Apache-2.0"
 
   on_macos do
