@@ -1,0 +1,171 @@
+name: ci
+
+# Aggregator pattern, modelled on tractat-us/bee's ci.yml:
+#
+#   detect  →  brew  →  ci-required (the ONE required status check)
+#
+# detect (seconds) diffs the change and emits one flag:
+#   formula-inputs — any path other than docs and repo metadata changed → brew runs
+#
+# brew lints every formula in the tap with `brew style` and `brew audit --strict`. The audit is offline on purpose (no --online): a formula's url and
+# sha256 may name a release that isn't published yet, as bee's first one did.
+#
+# ci-required passes only when every job that should have run succeeded and every other job
+# was skipped. It uses `if: always()`, not `!cancelled()`: a job skipped by its `if:` reports as
+# passing to branch protection, so a `!cancelled()` gate would turn a cancelled run green. Keep
+# the job name stable — branch protection names it.
+#
+# Bump PRs from fgn's release.yml and bee's brew-release.yml are opened with HOMEBREW_TAP_TOKEN,
+# a personal token, so they trigger this workflow. A PR opened with GITHUB_TOKEN would not, and
+# would never get ci-required.
+#
+# The repo is public, so standard runners cost nothing, but the org shares one queue of
+# concurrent jobs: ubuntu-latest only (macOS bills 10x), no matrix, a timeout on every job,
+# drafts skipped, superseded PR runs cancelled.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # ready_for_review: drafts skip the jobs, so leaving draft must trigger a real run.
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Present so a merge queue can be enabled without editing this file.
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The ready/push split (kuilt#1132): when a final push and draft→ready land in the
+# same second, the draft run must not cancel the ready run on the same sha.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action == 'ready_for_review' && 'ready' || 'push' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  detect:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      formula-inputs: ${{ steps.classify.outputs.formula-inputs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: the repo is small, and every base sha must resolve for the diff.
+          fetch-depth: 0
+
+      - name: Classify change
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+          MQ_BASE: ${{ github.event.merge_group.base_sha }}
+          MQ_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          run_everything() {
+            echo "$1 — running every gate."
+            echo "formula-inputs=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          case "$EVENT" in
+            pull_request) RANGE="$PR_BASE HEAD" ;;
+            merge_group)  RANGE="$MQ_BASE $MQ_HEAD" ;;
+            push)
+              [[ "$PUSH_BEFORE" =~ ^0+$ ]] && run_everything "Initial push"
+              RANGE="$PUSH_BEFORE $PUSH_AFTER" ;;
+            *) run_everything "$EVENT" ;;
+          esac
+
+          # Fail safe: an unresolvable diff runs everything rather than skipping gates.
+          # shellcheck disable=SC2086
+          FILES=$(git diff --name-only $RANGE) || run_everything "git diff failed"
+          [ -z "$FILES" ] && run_everything "No changed files detected"
+          echo "Changed files:"; echo "$FILES"
+
+          FORMULA_INPUTS=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            if ! { [[ "$file" == *.md ]] || [[ "$file" == LICENSE ]] \
+              || [[ "$file" == .gitignore ]] || [[ "$file" == renovate.json ]]; }; then
+              FORMULA_INPUTS=true
+            fi
+          done <<< "$FILES"
+          echo "formula-inputs=$FORMULA_INPUTS" >> "$GITHUB_OUTPUT"
+
+  brew:
+    needs: detect
+    if: needs.detect.outputs.formula-inputs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+    steps:
+      # Checks this repo out and taps it as tractat-us/tap (the Taps directory links to
+      # $GITHUB_WORKSPACE), so no actions/checkout or `brew tap` step is needed.
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@d482da0e602890d3160aade42e72c8556103bf04 # 2026.10.26.1
+
+      - name: Cache Homebrew Bundler RubyGems
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: ${{ runner.os }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: ${{ runner.os }}-rubygems-
+
+      - name: Install Homebrew Bundler RubyGems
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: timeout 600 brew install-bundler-gems
+
+      # No `brew readall --os=all --arch=all`: fgn.rb has a url only for darwin-arm64 and
+      # linux-x64, so it reads as invalid ("requires at least a URL") on every other platform.
+      - name: brew style
+        run: timeout 300 brew style tractat-us/tap
+
+      - name: brew audit
+        run: timeout 300 brew audit --strict --tap=tractat-us/tap
+
+  ci-required:
+    needs: [detect, brew]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check gate results
+        env:
+          DRAFT: ${{ github.event.pull_request.draft }}
+          DETECT: ${{ needs.detect.result }}
+          BREW: ${{ needs.brew.result }}
+          FORMULA_INPUTS: ${{ needs.detect.outputs.formula-inputs }}
+        run: |
+          set -euo pipefail
+          # A draft run verified nothing, so it is never a merge signal (kuilt#131).
+          if [ "$DRAFT" = "true" ]; then
+            echo "::error::Draft run — not a merge gate. Mark the PR ready for review."; exit 1
+          fi
+
+          echo "detect: $DETECT  brew: $BREW  formula-inputs: $FORMULA_INPUTS"
+
+          if [ "$DETECT" != "success" ]; then
+            echo "::error::detect did not succeed (result: $DETECT)."; exit 1
+          fi
+
+          if [ "$FORMULA_INPUTS" = "true" ]; then
+            if [ "$BREW" != "success" ]; then
+              echo "::error::brew had to run and pass (result: $BREW). skipped is not accepted."; exit 1
+            fi
+          elif [ "$BREW" != "skipped" ] && [ "$BREW" != "success" ]; then
+            echo "::error::brew had unexpected result: $BREW."; exit 1
+          fi
+          echo "All gates green."
